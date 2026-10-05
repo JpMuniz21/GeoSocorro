@@ -18,13 +18,14 @@ O módulo de integração resolve esse gargalo: a partir da entrada de um identi
 
 ## 🏗️ Arquitetura da Solução
 
-O ecossistema implementa o padrão arquitetural de desacoplamento em camadas com um intermediário **BFF (Backend For Frontend)**:
+O ecossistema implementa o padrão arquitetural de desacoplamento em camadas com um intermediário **BFF (Backend For Frontend)**[cite: 55]:
 
-┌─────────────────────────┐
-│  Terminal Web Regulação │ (React 19 + Vite)
-└────────────┬────────────┘
-             │ HTTP local:3000
-             ▼
+```text
+      ┌─────────────────────────┐
+      │  Terminal Web Regulação │ (React 19 + Vite)
+      └────────────┬────────────┘
+                   │ HTTP local:3000
+                   ▼
 ┌───────────────────────────────────────┐       HTTPS       ┌──────────────────┐
 │   Proxy Intermediário / BFF Express   │ ────────────────► │ API Pública      │
 │   - Gestão de CORS restritiva         │ ◄──────────────── │ ViaCEP           │
@@ -32,25 +33,26 @@ O ecossistema implementa o padrão arquitetural de desacoplamento em camadas com
 │   - Arquitetura Stateless (LGPD)      │
 │   - Roteamento de Despacho            │
 └──────────────────┬────────────────────┘
-│ WebSockets / Push Notifications
-▼
-┌─────────────────────────┐
-│ Equipe de Campo / Viatura│ (React Native)
-└─────────────────────────┘
+                   │ WebSockets / Push Notifications
+                   ▼
+      ┌─────────────────────────┐
+      │ Equipe de Campo / Viatura│ (React Native)
+      └─────────────────────────┘
+```
 
-1. **Terminal Web (React 19 + Vite):** Interface de mesa para o atendente/regulador, com sanitização em tempo real na borda, controle reativo de formulários e estados de loading visual.
+1. **Terminal Web (React 19 + Vite):** Interface de mesa para o atendente/regulador, com sanitização em tempo real na borda, controle reativo de formulários e estados de loading visual[cite: 55, 56, 57].
 2. **Terminal Móvel (React Native):** Aplicativo embarcado nos dispositivos móveis das viaturas para recebimento de alertas de despacho e orientações de rota em campo[cite: 55, 58].
-3. **Backend Proxy / BFF (Node.js + Express):** Barreira de isolamento arquitetural que gerencia CORS, valida CEPs, implementa timeouts defensivos, repassa contratos estruturados e aciona o despacho socorrista.
-4. **Provedor Externo (ViaCEP):** Serviço público de terceiro consumido estritamente via HTTPS.
+3. **Backend Proxy / BFF (Node.js + Express):** Barreira de isolamento arquitetural que gerencia CORS, valida CEPs, implementa timeouts defensivos, repassa contratos estruturados e aciona o despacho socorrista[cite: 55, 57, 58, 60, 61].
+4. **Provedor Externo (ViaCEP):** Serviço público de terceiro consumido estritamente via HTTPS[cite: 55, 58, 59].
 
 ---
 
 ## ⚙️ Especificação de Endpoints
 
 ### 1. Consulta e Resolução de CEP
-* **Rota Interna:** `GET /cep/:cep`
-* **Host Local:** `http://localhost:3000`
-* **Comunicação Externa:** `GET https://viacep.com.br/ws/{cep}/json/`
+* **Rota Interna:** `GET /cep/:cep`[cite: 58]
+* **Host Local:** `http://localhost:3000`[cite: 58]
+* **Comunicação Externa:** `GET [https://viacep.com.br/ws/](https://viacep.com.br/ws/){cep}/json/`[cite: 58]
 
 #### Exemplo de Resposta de Sucesso (`HTTP 200 OK`):
 ```json
@@ -60,34 +62,25 @@ O ecossistema implementa o padrão arquitetural de desacoplamento em camadas com
   "cidade": "Fortaleza",
   "estado": "CE"
 }
+```
 
+#### Tratamento de Erros Padronizado:
+* **CEP Inexistente (`HTTP 404`):** Retornado quando a ViaCEP sinaliza `{ erro: true }`[cite: 59, 63].
+* **Entrada Inválida (`HTTP 400`):** Rejeição na camada de validação se o CEP contiver formato diferente de 8 dígitos numéricos[cite: 56, 62].
+* **Indisponibilidade / Timeout (`HTTP 502/504`):** Aborto defensivo após 3 a 5 segundos sem resposta do serviço externo[cite: 57, 63, 64].
 
-1. Tratamento de Erros Padronizado:
+### 2. Notificação e Roteamento de Despacho
+* **Rota:** `POST /despacho/notificar`[cite: 58]
+* **Protocolo:** HTTPS / REST e canal de eventos assíncrono (WebSockets / Push)[cite: 58]
+* **Papel:** Recebe as coordenadas/logradouro confirmados, calcula o raio geográfico para o posto mais próximo e emite o alerta operacional[cite: 56, 57, 60, 61].
 
-CEP Inexistente (HTTP 404): Retornado quando a ViaCEP sinaliza { erro: true }.
+---
 
-Entrada Inválida (HTTP 400): Rejeição na camada de validação se o CEP contiver formato diferente de 8 dígitos numéricos.
+## 🔒 Conformidade com a LGPD e Segurança
 
-Indisponibilidade / Timeout (HTTP 502/504): Aborto defensivo após 3 a 5 segundos sem resposta do serviço externo.
-
-
-2. Notificação e Roteamento de Despacho
-
-Rota: POST /despacho/notificar 
-
-Protocolo: HTTPS / REST e canal de eventos assíncrono (WebSockets / Push)
-
-Papel: Recebe as coordenadas/logradouro confirmados, calcula o raio geográfico para o posto mais próximo e emite o alerta operacional.
-
-
-🔒 Conformidade com a LGPD e SegurançaArquitetura Stateless & Zero-Persistence:
-
-O backend em Express não persiste em disco, banco de dados ou logs de negócio o CEP consultado nem o endereço gerado, eliminando riscos de vazamento de dados residenciais.
-
-Trânsito Criptografado: Tráfego de saída realizado integralmente sob túnel seguro TLS/HTTPS.
-
-Governança de CORS: Política explícita de origens autorizadas restringindo o consumo do proxy exclusivamente aos clientes legítimos.
-
+* **Arquitetura Stateless & Zero-Persistence:** O backend em Express não persiste em disco, banco de dados ou logs de negócio o CEP consultado nem o endereço gerado, eliminando riscos de vazamento de dados residenciais[cite: 57, 60].
+* **Trânsito Criptografado:** Tráfego de saída realizado integralmente sob túnel seguro TLS/HTTPS[cite: 60].
+* **Governança de CORS:** Política explícita de origens autorizadas restringindo o consumo do proxy exclusivamente aos clientes legítimos[cite: 57, 60].
 ### 🧪 Matriz de Testes Principais
 
 | ID | Cenário | Entrada | Resultado Esperado |
