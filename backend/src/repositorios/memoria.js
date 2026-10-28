@@ -11,7 +11,9 @@ function createRepo() {
     { id: 3, nome: "Socorrista A (Unidade 1)", email: "socorrista1@geosocorro.local", perfil: PERFIS.SOCORRISTA, unidadeId: 1, senhaHash: bcrypt.hashSync("socorro123", 8) },
     { id: 4, nome: "Socorrista B (Unidade 1)", email: "socorrista1b@geosocorro.local", perfil: PERFIS.SOCORRISTA, unidadeId: 1, senhaHash: bcrypt.hashSync("socorro123", 8) },
     { id: 5, nome: "Socorrista C (Unidade 2)", email: "socorrista2@geosocorro.local", perfil: PERFIS.SOCORRISTA, unidadeId: 2, senhaHash: bcrypt.hashSync("socorro123", 8) },
+    { id: 6, nome: "Usuário Demo", email: "usuario@geosocorro.local", perfil: PERFIS.USUARIO, unidadeId: null, senhaHash: bcrypt.hashSync("usuario123", 8) },
   ];
+  let seqUsuario = 7;
   const ocorrencias = new Map();
   const historico = [];
   const notificacoes = [];
@@ -25,6 +27,17 @@ function createRepo() {
   return {
     async buscarUsuarioPorEmail(email) {
       return usuarios.find((u) => u.email === email.toLowerCase()) || null;
+    },
+    // Retorna null se o e-mail já existir (checagem atômica, sem corrida).
+    async criarUsuario({ nome, email, senhaHash, perfil, unidadeId = null }) {
+      const e = email.toLowerCase();
+      if (usuarios.some((u) => u.email === e)) return null;
+      const u = { id: seqUsuario++, nome, email: e, perfil, unidadeId, senhaHash };
+      usuarios.push(u);
+      return u;
+    },
+    async listarUsuariosPorPerfil(perfil) {
+      return usuarios.filter((u) => u.perfil === perfil);
     },
     async socorristasDaUnidade(unidadeId) {
       return usuarios.filter((u) => u.perfil === PERFIS.SOCORRISTA && u.unidadeId === unidadeId);
@@ -48,6 +61,10 @@ function createRepo() {
     async buscarOcorrencia(id) {
       return copia(ocorrencias.get(Number(id)));
     },
+    // predicado opcional; mais recentes primeiro
+    async listarOcorrencias(predicado = () => true) {
+      return [...ocorrencias.values()].filter(predicado).sort((a, b) => b.id - a.id).map(copia);
+    },
 
     // Troca de status condicional + histórico de forma atômica.
     // Equivalente SQL: UPDATE ... WHERE id=? AND status=? dentro de uma transação
@@ -64,12 +81,13 @@ function createRepo() {
         statusNovo: novo,
         acao: h.acao,
         motivo: h.motivo ?? null,
+        origem: h.origem ?? null,
         em: agora(),
       });
       return copia(o);
     },
     // Registro de evento sem mudança de status (ex.: sem unidades disponíveis).
-    async registrarEvento(ocorrenciaId, { usuarioId, acao, motivo }) {
+    async registrarEvento(ocorrenciaId, { usuarioId, acao, motivo, origem }) {
       const o = ocorrencias.get(Number(ocorrenciaId));
       historico.push({
         id: seqHistorico++,
@@ -79,6 +97,7 @@ function createRepo() {
         statusNovo: o?.status ?? null,
         acao,
         motivo: motivo ?? null,
+        origem: origem ?? null,
         em: agora(),
       });
     },
