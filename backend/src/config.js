@@ -21,5 +21,7 @@ module.exports = {
     breakerResetMs: Number(process.env.EXTERNO_BREAKER_RESET_MS) || 15000,
   },
   loginRateMax: Number(process.env.LOGIN_RATE_MAX) || 10,
+  cadastroRateMax: Number(process.env.CADASTRO_RATE_MAX) || 5,
+  ocorrenciaRateMax: Number(process.env.OCORRENCIA_RATE_MAX) || 5,
   seedDemo: process.env.SEED_DEMO === "true",
 };
