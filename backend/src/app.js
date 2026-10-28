@@ -8,7 +8,7 @@ const { criarServicoOcorrencias } = require("./servicos/ocorrencias");
 const { criarRotas } = require("./rotas");
 const { requestId, logRequisicao, rotaNaoEncontrada, tratarErros } = require("./middlewares/geral");
 
-function createApp({ repo = createRepo(), loginMax } = {}) {
+function createApp({ repo = createRepo(), loginMax, cadastroMax, ocorrenciaMax } = {}) {
   const app = express();
   const notificador = criarNotificador(repo);
   const servico = criarServicoOcorrencias({ repo, notificador });
@@ -29,7 +29,7 @@ function createApp({ repo = createRepo(), loginMax } = {}) {
   app.use(logRequisicao);
 
   app.get("/saude", (req, res) => res.json({ status: "ok" }));
-  app.use(criarRotas({ repo, servico, loginMax }));
+  app.use(criarRotas({ repo, servico, loginMax, cadastroMax, ocorrenciaMax }));
 
   app.use(rotaNaoEncontrada);
   app.use(tratarErros);
