@@ -7,6 +7,7 @@ const config = require("../config");
 const { autenticar, autorizar } = require("../middlewares/geral");
 const { naoAutenticado, conflito } = require("../erros");
 const { PERFIS, STATUS } = require("../constantes");
+const { buscarPorCep } = require('../servicos/geocodificacao');
 
 const loginSchema = z.object({ email: z.string().email(), senha: z.string().min(1) });
 const respostaSchema = z.object({ aceite: z.boolean(), motivo: z.string().max(300).optional() });
@@ -16,9 +17,7 @@ const statusSchema = z.object({
 const idSchema = z.coerce.number().int().positive();
 const notificarSchema = z.object({ unidadeId: z.number().int().positive().optional() }).strict();
 
-// ---- validação forte de entrada ----
 const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
-// texto sem caracteres de controle nem < > (evita injeção de HTML no painel)
 const texto = (min, max) =>
   z.string().trim().min(min).max(max).regex(/^[^<>\u0000-\u001f]*$/, "contém caracteres inválidos");
 const cepSchema = z
@@ -37,7 +36,6 @@ const campos = {
   estado: z.string().trim().toUpperCase().pipe(z.enum(UFS)),
   descricao: texto(0, 500).optional(),
 };
-// O cidadão não escolhe unidades; só a central/admin informa candidatas.
 const ocorrenciaUsuarioSchema = z.object(campos).strict();
 const ocorrenciaCentralSchema = z
   .object({ ...campos, unidadesCandidatas: z.array(z.number().int().positive()).max(20).optional() })
@@ -47,7 +45,6 @@ const cadastroSchema = z
   .object({
     nome: texto(2, 80),
     email: z.string().trim().toLowerCase().email().max(120),
-    // 72 = limite do bcrypt
     senha: z
       .string()
       .min(8, "mínimo 8 caracteres")
@@ -57,7 +54,6 @@ const cadastroSchema = z
   })
   .strict();
 
-// Todas as rotas async passam erros ao middleware central.
 const rota = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 
 function criarRotas({ repo, servico, loginMax = config.loginRateMax, cadastroMax = config.cadastroRateMax, ocorrenciaMax = config.ocorrenciaRateMax }) {
@@ -76,7 +72,6 @@ function criarRotas({ repo, servico, loginMax = config.loginRateMax, cadastroMax
 
   const limitadorLogin = criarLimitador(loginMax, "Muitas tentativas de login. Aguarde um minuto.");
   const limitadorCadastro = criarLimitador(cadastroMax, "Muitos cadastros deste endereço. Aguarde um minuto.");
-  // Por usuário logado (não por IP): vários cidadãos atrás do mesmo IP não se bloqueiam.
   const limitadorOcorrencia = criarLimitador(ocorrenciaMax, "Muitas solicitações em pouco tempo. Aguarde um minuto.", {
     keyGenerator: (req) => `u${req.usuario.id}`,
   });
@@ -87,7 +82,6 @@ function criarRotas({ repo, servico, loginMax = config.loginRateMax, cadastroMax
     rota(async (req, res) => {
       const { email, senha } = loginSchema.parse(req.body);
       const usuario = await repo.buscarUsuarioPorEmail(email);
-      // Mesma mensagem para e-mail inexistente e senha errada.
       if (!usuario || !(await bcrypt.compare(senha, usuario.senhaHash))) {
         throw naoAutenticado("E-mail ou senha incorretos");
       }
@@ -107,7 +101,6 @@ function criarRotas({ repo, servico, loginMax = config.loginRateMax, cadastroMax
     limitadorCadastro,
     rota(async (req, res) => {
       const { nome, email, senha } = cadastroSchema.parse(req.body);
-      // Perfil sempre "usuario": ninguém se cadastra como central/socorrista/admin.
       const usuario = await repo.criarUsuario({
         nome,
         email,
@@ -121,7 +114,6 @@ function criarRotas({ repo, servico, loginMax = config.loginRateMax, cadastroMax
 
   r.use(autenticar);
 
-  // sub vem como string no JWT; normaliza para número
   r.use((req, res, next) => {
     req.usuario.id = Number(req.usuario.id);
     next();
@@ -198,5 +190,14 @@ function criarRotas({ repo, servico, loginMax = config.loginRateMax, cadastroMax
 
   return r;
 }
+router.get('/cep/:cep', async (req, res, next) => {
+  try {
+    const resultado = await buscarPorCep(req.params.cep);
+    res.json(resultado);
+  } catch (err) {
+    next(err);
+  }
+});
+
 
 module.exports = { criarRotas };
