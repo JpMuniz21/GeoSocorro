@@ -1,6 +1,3 @@
-// Repositório em memória. Todas as funções são async de propósito:
-// quando a Pessoa 1 definir o banco, basta reimplementar este módulo
-// (mesmas assinaturas) sem mexer em rotas ou serviços.
 const bcrypt = require("bcryptjs");
 const { STATUS, PERFIS } = require("../constantes");
 
